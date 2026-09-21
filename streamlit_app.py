@@ -50,7 +50,7 @@ with st.sidebar:
     
     selected_model = st.selectbox(
         "انتخاب مدل هوش مصنوعی:",
-        ["gemini-2.5-flash", "gemini-2.0-flash"],
+        ["gemini-2.5-flash", "gemini-1.5-flash"],
         index=0
     )
     
