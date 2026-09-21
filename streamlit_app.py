@@ -1,56 +1,140 @@
+import os
+import pandas as pd
 import streamlit as st
-from openai import OpenAI
+import google.generativeai as genai
 
-# Show title and description.
-st.title("💬 Chatbot")
-st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+# ==========================================
+# تنظیمات صفحه Streamlit
+# ==========================================
+st.set_page_config(
+    page_title="دستیار هوشمند پژوهش معماری و انرژی",
+    page_icon="🏛️",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
+# ==========================================
+# بارگذاری پایگاه دانش از فایل اکسل
+# ==========================================
+@st.cache_data
+def load_knowledge_base():
+    file_path = "07_Architecture_Energy_Knowledge_Base_v02.xlsx"
+    
+    if not os.path.exists(file_path):
+        return "پایگاه دانش معماری و انرژی فعال است.", {}
 
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+    xls = pd.ExcelFile(file_path)
+    knowledge_text = "### پایگاه دانش جامع معماری و انرژی:\n\n"
+    sheets_dict = {}
 
-    # Create a session state variable to store the chat messages. This ensures that the
-    # messages persist across reruns.
+    for sheet_name in xls.sheet_names:
+        df = pd.read_excel(xls, sheet_name).dropna(how='all')
+        sheets_dict[sheet_name] = df
+        knowledge_text += f"==== شیت: {sheet_name} ====\n"
+        knowledge_text += df.to_markdown(index=False)
+        knowledge_text += "\n\n"
+
+    return knowledge_text, sheets_dict
+
+# ==========================================
+# نوار جانبی (Sidebar) برای ورود کلید جمنای
+# ==========================================
+with st.sidebar:
+    st.title("تنظیمات دستیار هوشمند")
+    
+    api_key_input = st.text_input(
+        "کلید API گوگل (Gemini API Key):",
+        type="password",
+        help="کلید رایگان خود را از Google AI Studio دریافت کنید."
+    )
+    
+    selected_model = st.selectbox(
+        "انتخاب مدل هوش مصنوعی:",
+        ["gemini-1.5-flash", "gemini-1.5-pro"],
+        index=0
+    )
+    
+    temperature = st.slider(
+        "دقت پاسخ‌دهی (Temperature):",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.2,
+        step=0.05
+    )
+    
+    st.divider()
+    knowledge_text, sheets_dict = load_knowledge_base()
+    if sheets_dict:
+        st.success(f"پایگاه دانش با {len(sheets_dict)} شیت با موفقیت بارگذاری شد.")
+    else:
+        st.warning("فایل اکسل دیتابیس در ریپازیتوری یافت نشد.")
+
+# ==========================================
+# رابط کاربری اصلی (تَب‌بندی شده)
+# ==========================================
+st.title("🏛️ دستیار پژوهشی تخصصی معماری و انرژی")
+st.caption("متصل به موتور هوش مصنوعی Gemini و پایگاه داده علمی")
+
+tab_chat, tab_database = st.tabs(["💬 چت و پرسش تحقیقاتی", "📂 مرور پایگاه دانش"])
+
+# ------------------------------------------
+# تب ۱: چت با جمنای
+# ------------------------------------------
+with tab_chat:
+    SYSTEM_INSTRUCTIONS = """
+    شما یک دستیار ارشد تحقیقاتی و پژوهشگر تخصصی در حوزه «معماری و انرژی» هستید.
+    پاسخ‌های شما باید دقیق، علمی و مستند به پایگاه دانش ارائه شده باشد.
+    """
+
     if "messages" not in st.session_state:
-        st.session_state.messages = []
+        st.session_state.messages = [
+            {"role": "assistant", "content": "سلام! من دستیار پژوهشی معماری و انرژی هستم. پرسش خود را مطرح کنید."}
+        ]
 
-    # Display the existing chat messages via `st.chat_message`.
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
-
-        # Store and display the current prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
+    if user_query := st.chat_input("پرسش خود را درباره بهینه‌سازی انرژی، نماهای تطبیق‌پذیر و... بنویسید"):
+        if not api_key_input:
+            st.warning("لطفاً ابتدا کلید Gemini API را در نوار جانبی (Sidebar) وارد کنید.")
+            st.stop()
+            
+        st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
-            st.markdown(prompt)
+            st.markdown(user_query)
 
-        # Generate a response using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
-        )
-
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
         with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+            with st.spinner("در حال تحلیل داده‌های پایگاه دانش با جمنای..."):
+                try:
+                    genai.configure(api_key=api_key_input)
+                    full_prompt = f"{knowledge_text}\n\n==== پرسش کاربر ====\n{user_query}"
+                    
+                    model = genai.GenerativeModel(
+                        model_name=selected_model,
+                        system_instruction=SYSTEM_INSTRUCTIONS,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=temperature,
+                            top_p=0.95,
+                        )
+                    )
+                    
+                    response = model.generate_content(full_prompt)
+                    response_text = response.text
+                    
+                    st.markdown(response_text)
+                    st.session_state.messages.append({"role": "assistant", "content": response_text})
+                    
+                except Exception as e:
+                    st.error(f"خطا در پردازش درخواست: {str(e)}")
+
+# ------------------------------------------
+# تب ۲: نمایش جدول‌های دیتابیس
+# ------------------------------------------
+with tab_database:
+    st.subheader("📋 اطلاعات پایگاه دانش")
+    if sheets_dict:
+        selected_sheet = st.selectbox("انتخاب جدول:", list(sheets_dict.keys()))
+        st.dataframe(sheets_dict[selected_sheet], use_container_width=True)
+    else:
+        st.warning("فایل اکسل در پوشه یافت نشد.")
