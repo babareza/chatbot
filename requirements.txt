@@ -1,2 +1,5 @@
 streamlit
-openai
+pandas
+google-generativeai
+tabulate
+openpyxl
